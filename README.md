@@ -22,6 +22,15 @@ Bu papkada 2 narsa bor:
 3. Hech qanday qo'shimcha sozlash kerak emas (Framework: "Other" / zero-config yetarli).
 4. Deploy tugagach sizga `https://....vercel.app` manzili beriladi.
 
+## Token qayerdan olinganini to'g'ri tanlash
+
+Meta Developer Console'da 2 xil joydan token olish mumkin, va ular boshqa-boshqa domenlarda ishlaydi:
+
+- **"API setup with Instagram login"** sahifasidagi har bir akkaunt qatoridagi **"Generate token"** — bu Instagram Login orqali olingan token, `graph.instagram.com`da ishlaydi, odatda `IGAA...` bilan boshlanadi. Shu qatordagi raqam (masalan `17841474899465035`) — Instagram Business Account ID.
+- **Business Manager / Facebook Page** orqali olingan Page Access Token — `graph.facebook.com`da ishlaydi, odatda `EAA...` bilan boshlanadi.
+
+Sahifadagi **"Token qayerdan olingan"** tanlovini shunga mos tanlang — aks holda "Cannot parse access token" xatosi chiqadi.
+
 ## Ishlatish
 
 1. Berilgan `.vercel.app` manzilini brauzerda oching.
