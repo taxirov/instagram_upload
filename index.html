@@ -123,6 +123,22 @@
         <div class="panel-title">Ulanish parametrlari</div>
         <div class="panel-desc">Bu maydonlar faqat shu sahifa sessiyasida (brauzer xotirasida) saqlanadi — serverga yuborilmaydi, sahifani yopsangiz o'chib ketadi.</div>
 
+        <div class="toggle-row" style="margin-top:0;">
+          <div class="toggle" id="manualModeToggle"><div class="knob"></div></div>
+          <div class="toggle-label">ID va tokenni interfeysdan qo'lda kiritish</div>
+        </div>
+
+        <div id="regionPicker">
+          <label>Viloyat (kanal)</label>
+          <select id="regionSelect">
+            <option value="">— yuklanmoqda —</option>
+          </select>
+          <div class="btn-row">
+            <button class="btn" id="testRegionBtn">Ulanishni tekshirish</button>
+          </div>
+        </div>
+
+        <div id="manualFields" style="display:none;">
         <label>Token qayerdan olingan</label>
         <select id="loginType">
           <option value="instagram">Instagram Login ("API setup with Instagram login" → Generate token)</option>
@@ -147,6 +163,7 @@
         <div class="btn-row">
           <button class="btn" id="toggleTokenBtn">Ko'rsatish</button>
           <button class="btn" id="testTokenBtn">Tokenni tekshirish</button>
+        </div>
         </div>
       </div>
 
@@ -233,6 +250,19 @@ const igUserIdInput = el('igUserId');
 const apiVersionSelect = el('apiVersion');
 const loginTypeSelect = el('loginType');
 const loginTypeHint = el('loginTypeHint');
+const videoUrlInput = el('videoUrl');
+const captionInput = el('caption');
+const mediaTypeSelect = el('mediaType');
+const thumbOffsetInput = el('thumbOffset');
+const consoleLog = el('consoleLog');
+const tokenDot = el('tokenDot');
+const tokenStatusText = el('tokenStatusText');
+const regionSelect = el('regionSelect');
+const regionPicker = el('regionPicker');
+const manualFields = el('manualFields');
+const manualModeToggle = el('manualModeToggle');
+
+let manualMode = false;
 
 function domainFor(loginType){
   return loginType === 'instagram' ? 'graph.instagram.com' : 'graph.facebook.com';
@@ -242,13 +272,36 @@ loginTypeSelect.addEventListener('change', () => {
     ? 'graph.instagram.com orqali yuboriladi — token odatda "IGAA..." bilan boshlanadi'
     : 'graph.facebook.com orqali yuboriladi — token odatda "EAA..." bilan boshlanadi';
 });
-const videoUrlInput = el('videoUrl');
-const captionInput = el('caption');
-const mediaTypeSelect = el('mediaType');
-const thumbOffsetInput = el('thumbOffset');
-const consoleLog = el('consoleLog');
-const tokenDot = el('tokenDot');
-const tokenStatusText = el('tokenStatusText');
+
+manualModeToggle.addEventListener('click', () => {
+  manualMode = !manualMode;
+  manualModeToggle.classList.toggle('active', manualMode);
+  manualFields.style.display = manualMode ? 'block' : 'none';
+  regionPicker.style.display = manualMode ? 'none' : 'block';
+  tokenDot.className = 'dot';
+  tokenStatusText.textContent = 'Token tekshirilmagan';
+});
+
+async function loadAccounts(){
+  try{
+    const res = await fetch('/api/accounts');
+    const data = await res.json();
+    regionSelect.innerHTML = '';
+    if(!data.accounts || data.accounts.length === 0){
+      regionSelect.innerHTML = '<option value="">Hali akkaunt sozlanmagan</option>';
+      return;
+    }
+    data.accounts.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.key;
+      opt.textContent = a.name;
+      regionSelect.appendChild(opt);
+    });
+  }catch(e){
+    regionSelect.innerHTML = '<option value="">Ro\'yxatni yuklab bo\'lmadi</option>';
+  }
+}
+loadAccounts();
 
 let shareToFeed = true;
 el('shareToFeedToggle').addEventListener('click', () => {
@@ -284,19 +337,22 @@ function resetSteps(){
 
 // Barcha so'rovlar shu saytdagi /api/proxy Vercel funksiyasi orqali yuboriladi.
 // Brauzer faqat o'z domeniga (same-origin) murojaat qiladi, shuning uchun CORS
-// xatosi chiqmaydi — Facebook'ga so'rov proxy funksiyasi ichida, server tomonidan yuboriladi.
+// xatosi chiqmaydi. Qo'lda rejimda token/domain brauzerdan boradi; viloyat
+// rejimida esa faqat accountKey yuboriladi — token va ID serverda, yashirin
+// konfiguratsiyadan olinadi va brauzerga hech qachon qaytarilmaydi.
 async function callApi(path, params, method='GET'){
   log(`${method} ${path.split('?')[0]} ${JSON.stringify(Object.fromEntries(Object.entries(params).filter(([k])=>k!=='access_token')))}`, 'req');
+  const payload = { path, method, params };
+  if(manualMode){
+    payload.apiVersion = apiVersionSelect.value;
+    payload.domain = domainFor(loginTypeSelect.value);
+  } else {
+    payload.accountKey = regionSelect.value;
+  }
   const res = await fetch('/api/proxy', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      path,
-      method,
-      params,
-      apiVersion: apiVersionSelect.value,
-      domain: domainFor(loginTypeSelect.value)
-    })
+    body: JSON.stringify(payload)
   });
   const data = await res.json();
   if(!res.ok || data.error){
@@ -305,6 +361,13 @@ async function callApi(path, params, method='GET'){
   }
   log(`OK ${JSON.stringify(data)}`, 'res');
   return data;
+}
+
+// Qo'lda rejimda haqiqiy ID ishlatiladi; viloyat rejimida ID brauzerga
+// ma'lum emas — shuning uchun "{ig-id}" belgisi yuboriladi, serverda
+// accountKey orqali haqiqiy ID bilan almashtiriladi.
+function igId(){
+  return manualMode ? igUserIdInput.value.trim() : '{ig-id}';
 }
 
 el('testTokenBtn').addEventListener('click', async () => {
@@ -323,18 +386,41 @@ el('testTokenBtn').addEventListener('click', async () => {
   }
 });
 
+el('testRegionBtn').addEventListener('click', async () => {
+  if(!regionSelect.value){ log('Viloyat tanlanmagan', 'err'); return; }
+  el('testRegionBtn').disabled = true;
+  try{
+    const data = await callApi('/me', {fields:'id,username'});
+    tokenDot.className = 'dot on';
+    tokenStatusText.textContent = `Faol · ${data.username || data.id}`;
+  }catch(e){
+    tokenDot.className = 'dot off';
+    tokenStatusText.textContent = 'Ulanib bo\'lmadi';
+  }finally{
+    el('testRegionBtn').disabled = false;
+  }
+});
+
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
 el('publishBtn').addEventListener('click', async () => {
   const token = tokenInput.value.trim();
-  const igUserId = igUserIdInput.value.trim();
+  const igUserId = igId();
   const videoUrl = videoUrlInput.value.trim();
   const caption = captionInput.value;
   const mediaType = mediaTypeSelect.value;
   const thumbOffset = thumbOffsetInput.value.trim();
 
-  if(!token || !igUserId || !videoUrl){
-    log('IG User ID, Access Token va Video URL to\'ldirilishi shart', 'err');
+  if(manualMode && (!token || !igUserId)){
+    log('IG User ID va Access Token to\'ldirilishi shart', 'err');
+    return;
+  }
+  if(!manualMode && !regionSelect.value){
+    log('Viloyat tanlanmagan', 'err');
+    return;
+  }
+  if(!videoUrl){
+    log('Video URL kiritilishi shart', 'err');
     return;
   }
 
@@ -345,11 +431,11 @@ el('publishBtn').addEventListener('click', async () => {
     // Step 1: create container
     setStep(1, 'active', 'konteyner yaratilmoqda...');
     const containerParams = {
-      access_token: token,
       video_url: videoUrl,
       caption: caption,
       media_type: mediaType
     };
+    if(manualMode) containerParams.access_token = token;
     if(mediaType === 'REELS'){
       containerParams.share_to_feed = shareToFeed ? 'true' : 'false';
     }
@@ -367,7 +453,9 @@ el('publishBtn').addEventListener('click', async () => {
     while(statusCode === 'IN_PROGRESS' && attempts < 30){
       await sleep(4000);
       attempts++;
-      const statusRes = await callApi(`/${creationId}`, {access_token: token, fields:'status_code,status'});
+      const statusParams = {fields:'status_code,status'};
+      if(manualMode) statusParams.access_token = token;
+      const statusRes = await callApi(`/${creationId}`, statusParams);
       statusCode = statusRes.status_code;
       setStep(2, 'active', `holat: ${statusCode} (${attempts}/30)`);
       if(statusCode === 'ERROR'){
@@ -381,10 +469,9 @@ el('publishBtn').addEventListener('click', async () => {
 
     // Step 3: publish
     setStep(3, 'active', 'chop etilmoqda...');
-    const publishRes = await callApi(`/${igUserId}/media_publish`, {
-      access_token: token,
-      creation_id: creationId
-    }, 'POST');
+    const publishParams = { creation_id: creationId };
+    if(manualMode) publishParams.access_token = token;
+    const publishRes = await callApi(`/${igUserId}/media_publish`, publishParams, 'POST');
     setStep(3, 'done', `chop etildi · media ID: ${publishRes.id}`);
     log('Muvaffaqiyatli chop etildi ✔', 'res');
 
