@@ -21,14 +21,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { path, method = 'GET', params = {}, apiVersion = 'v19.0' } = req.body || {};
+    const { path, method = 'GET', params = {}, apiVersion = 'v19.0', domain = 'graph.facebook.com' } = req.body || {};
 
     if (!path) {
       res.status(400).json({ error: { message: '"path" maydoni kerak' } });
       return;
     }
 
-    const url = new URL(`https://graph.facebook.com/${apiVersion}${path}`);
+    const allowedDomains = ['graph.facebook.com', 'graph.instagram.com'];
+    if (!allowedDomains.includes(domain)) {
+      res.status(400).json({ error: { message: 'Ruxsat etilmagan domen' } });
+      return;
+    }
+
+    const url = new URL(`https://${domain}/${apiVersion}${path}`);
     const fetchOpts = { method };
 
     if (method === 'GET') {
