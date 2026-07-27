@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reels Uplink — Instagram Publish Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="shortcut icon" href="./logo.png" type="image/x-icon">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
@@ -99,6 +100,11 @@
 
   .notice{background:rgba(242,184,75,0.08); border:1px solid rgba(242,184,75,0.35); color:#F2B84B; font-size:12px; line-height:1.6; padding:12px 14px; border-radius:8px; margin-top:18px;}
   .notice b{color:#F7CE7C;}
+
+  input[type=file]{width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--muted); font-family:'IBM Plex Mono'; font-size:12px; padding:9px 10px; border-radius:7px; cursor:pointer;}
+  input[type=file]::file-selector-button{background:var(--panel); color:var(--cyan); border:1px solid var(--line); border-radius:6px; padding:6px 10px; margin-right:10px; font-family:'IBM Plex Mono'; font-size:11.5px; cursor:pointer;}
+  .upload-progress-bar{height:6px; background:var(--panel-2); border-radius:99px; overflow:hidden;}
+  .upload-progress-fill{height:100%; width:0%; background:linear-gradient(90deg, var(--cyan), var(--magenta)); transition:width .15s;}
   footer{margin-top:34px; text-align:center; font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted);}
 </style>
 </head>
@@ -171,7 +177,17 @@
         <div class="panel-title">Video ma'lumotlari</div>
         <div class="panel-desc">Instagram Graph API videoni faqat ochiq (public) URL orqali qabul qiladi — kompyuterdan to'g'ridan-to'g'ri fayl yuklash imkonsiz. Videoni avval biror ochiq storage'ga (masalan S3, Google Drive to'g'ridan-to'g'ri link, CDN) joylashtiring.</div>
 
-        <label>Video URL <span class="hint">(.mp4, ochiq link)</span></label>
+        <label>Video fayl <span class="hint">(device'dan tanlang — yuklab, havolasi avtomatik olinadi)</span></label>
+        <input type="file" id="videoFile" accept="video/*">
+        <div class="btn-row">
+          <button class="btn" id="uploadFileBtn">Yuklash va havola olish</button>
+        </div>
+        <div id="uploadProgressWrap" style="display:none; margin-top:12px;">
+          <div class="upload-progress-bar"><div class="upload-progress-fill" id="uploadProgressFill"></div></div>
+          <div class="hint" id="uploadProgressText" style="margin-top:6px;">0%</div>
+        </div>
+
+        <label>Video URL <span class="hint">(.mp4, ochiq link — fayl yuklasangiz avtomatik to'ldiriladi)</span></label>
         <input type="url" id="videoUrl" placeholder="https://.../video.mp4">
 
         <label>Media turi</label>
@@ -197,7 +213,8 @@
           <button class="btn btn-ghost" id="resetBtn">Tozalash</button>
         </div>
 
-        <div class="notice"><b>Eslatma:</b> Agar brauzer konsolida CORS xatosi chiqsa — bu Facebook/Instagram tomonidan ba'zi so'rovlar to'g'ridan-to'g'ri brauzerdan qabul qilinmasligi sababli. Bu holda so'rovlarni oddiy backend (Node/PHP) orqali proksi qilish kerak bo'ladi; shu sahifaning so'rov formatidan bevosita foydalanishingiz mumkin.</div>
+        <div class="notice"><b>Eslatma:</b> "Video fayl" orqali device'dan yuklasangiz, havola uguu.se (vaqtinchalik, ochiq xosting) orqali avtomatik olinadi. Agar u yuklanmasa yoki brauzer konsolida CORS xatosi chiqsa, tayyor .mp4 havolangiz bo'lsa, uni to'g'ridan-to'g'ri "Video URL" maydoniga qo'lda kiritsangiz ham bo'ladi.</div>
+        <div class="notice" style="margin-top:12px;">uguu.se — uchinchi tomon, ochiq (hech kim tekshirmaydigan) fayl xostingi: yuklangan video havolasi bir muddat (odatda bir necha soat) hamma uchun ochiq turadi, keyin avtomatik o'chadi. Bu Instagram uchun yetarli, chunki havola darhol ishlatiladi.</div>
       </div>
     </div>
 
@@ -307,6 +324,59 @@ let shareToFeed = true;
 el('shareToFeedToggle').addEventListener('click', () => {
   shareToFeed = !shareToFeed;
   el('shareToFeedToggle').classList.toggle('active', shareToFeed);
+});
+
+// Videoni uguu.se orqali yuklab, ochiq (public) havola olamiz — Instagram
+// Graph API videoni faqat shunday ochiq URL orqali qabul qiladi.
+function uploadToUguu(file, onProgress){
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://uguu.se/upload?output=text');
+    xhr.upload.onprogress = (e) => {
+      if(e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100));
+    };
+    xhr.onload = () => {
+      if(xhr.status >= 200 && xhr.status < 300){
+        resolve(xhr.responseText.trim());
+      } else {
+        reject(new Error(`Yuklashda xato: HTTP ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Tarmoq xatosi (yoki uguu.se CORS bloklagan)'));
+    const fd = new FormData();
+    fd.append('files[]', file);
+    xhr.send(fd);
+  });
+}
+
+el('uploadFileBtn').addEventListener('click', async () => {
+  const fileInput = el('videoFile');
+  const file = fileInput.files[0];
+  if(!file){ log('Avval fayl tanlang', 'err'); return; }
+
+  const wrap = el('uploadProgressWrap');
+  const fill = el('uploadProgressFill');
+  const text = el('uploadProgressText');
+  wrap.style.display = 'block';
+  fill.style.width = '0%';
+  text.textContent = `Yuklanmoqda... 0% (${(file.size/1024/1024).toFixed(1)} MB)`;
+  el('uploadFileBtn').disabled = true;
+  log(`Fayl uguu.se'ga yuklanmoqda: ${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`, 'info');
+
+  try{
+    const url = await uploadToUguu(file, (pct) => {
+      fill.style.width = pct + '%';
+      text.textContent = `Yuklanmoqda... ${pct}%`;
+    });
+    videoUrlInput.value = url;
+    text.textContent = `Tayyor ✔ havola olindi`;
+    log(`Havola olindi: ${url}`, 'res');
+  }catch(e){
+    text.textContent = 'Xato: ' + e.message;
+    log(`Yuklash xatosi: ${e.message}`, 'err');
+  }finally{
+    el('uploadFileBtn').disabled = false;
+  }
 });
 
 el('toggleTokenBtn').addEventListener('click', () => {
