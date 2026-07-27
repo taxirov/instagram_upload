@@ -123,6 +123,13 @@
         <div class="panel-title">Ulanish parametrlari</div>
         <div class="panel-desc">Bu maydonlar faqat shu sahifa sessiyasida (brauzer xotirasida) saqlanadi — serverga yuborilmaydi, sahifani yopsangiz o'chib ketadi.</div>
 
+        <label>Token qayerdan olingan</label>
+        <select id="loginType">
+          <option value="instagram">Instagram Login ("API setup with Instagram login" → Generate token)</option>
+          <option value="facebook">Facebook Login / Business Manager (Page Access Token)</option>
+        </select>
+        <div class="hint" id="loginTypeHint" style="margin-top:6px; line-height:1.5; display:block;">graph.instagram.com orqali yuboriladi — token odatda "IGAA..." bilan boshlanadi</div>
+
         <label>Graph API versiyasi</label>
         <select id="apiVersion">
           <option value="v21.0">v21.0</option>
@@ -131,7 +138,7 @@
           <option value="v18.0">v18.0</option>
         </select>
 
-        <label>Instagram Business Account ID <span class="hint">(IG User ID)</span></label>
+        <label>Instagram Business Account ID <span class="hint">(IG User ID — jadvaldagi raqam, masalan 17841474899465035)</span></label>
         <input type="text" id="igUserId" placeholder="17841400000000000">
 
         <div class="field-row"><label style="margin-top:16px">Access Token</label><span class="hint" style="margin-top:16px">long-lived token</span></div>
@@ -224,6 +231,17 @@ const el = id => document.getElementById(id);
 const tokenInput = el('accessToken');
 const igUserIdInput = el('igUserId');
 const apiVersionSelect = el('apiVersion');
+const loginTypeSelect = el('loginType');
+const loginTypeHint = el('loginTypeHint');
+
+function domainFor(loginType){
+  return loginType === 'instagram' ? 'graph.instagram.com' : 'graph.facebook.com';
+}
+loginTypeSelect.addEventListener('change', () => {
+  loginTypeHint.textContent = loginTypeSelect.value === 'instagram'
+    ? 'graph.instagram.com orqali yuboriladi — token odatda "IGAA..." bilan boshlanadi'
+    : 'graph.facebook.com orqali yuboriladi — token odatda "EAA..." bilan boshlanadi';
+});
 const videoUrlInput = el('videoUrl');
 const captionInput = el('caption');
 const mediaTypeSelect = el('mediaType');
@@ -276,7 +294,8 @@ async function callApi(path, params, method='GET'){
       path,
       method,
       params,
-      apiVersion: apiVersionSelect.value
+      apiVersion: apiVersionSelect.value,
+      domain: domainFor(loginTypeSelect.value)
     })
   });
   const data = await res.json();
