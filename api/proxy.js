@@ -5,8 +5,10 @@
 // Facebook'ga so'rov esa server-server tarzda amalga oshadi.
 
 const accounts = require('./accounts-config');
+const { requireAuth } = require('./_auth');
 
 module.exports = async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
   // Oddiy CORS sarlavhalari (agar boshqa domendan chaqirilsa ham ishlashi uchun)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');

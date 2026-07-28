@@ -1,9 +1,11 @@
 const accounts = require('./accounts-config');
+const { requireAuth } = require('./_auth');
 
 // Faqat "key" va "name" (viloyat nomi) brauzerga yuboriladi.
 // "token" va "igUserId" hech qachon shu javobda chiqmaydi — ular faqat
 // proxy.js ichida, server tomonida ishlatiladi.
 module.exports = function handler(req, res) {
+  if (!requireAuth(req, res)) return;
   res.setHeader('Access-Control-Allow-Origin', '*');
   const safeList = accounts
     .filter(a => a.igUserId && a.token) // hali to'ldirilmagan akkauntlarni ro'yxatda ko'rsatmaydi
