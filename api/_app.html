@@ -106,6 +106,20 @@
   .upload-progress-fill{height:100%; width:0%; background:linear-gradient(90deg, var(--cyan), var(--magenta)); transition:width .15s;}
   .upload-progress-fill.indeterminate{width:40%; animation:indet-slide 1.1s ease-in-out infinite;}
   @keyframes indet-slide{ 0%{ transform:translateX(-100%);} 100%{ transform:translateX(250%);} }
+
+  .bulk-channel-list{display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; margin-top:12px; max-height:220px; overflow-y:auto; padding-right:4px;}
+  .bulk-channel-item{display:flex; align-items:center; gap:8px; font-size:13px;}
+  .bulk-channel-item input{accent-color:var(--cyan); width:15px; height:15px; flex-shrink:0;}
+  .bulk-channel-item label{margin:0; text-transform:none; font-family:'IBM Plex Sans'; font-size:13px; letter-spacing:0; color:var(--text); cursor:pointer;}
+
+  .bulk-results-list{display:flex; flex-direction:column; gap:8px; margin-top:10px; max-height:320px; overflow-y:auto;}
+  .bulk-row{display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--panel-2); border:1px solid var(--line); border-radius:7px;}
+  .bulk-badge{width:9px; height:9px; border-radius:50%; background:var(--muted); flex-shrink:0;}
+  .bulk-badge.active{background:var(--amber); box-shadow:0 0 6px var(--amber);}
+  .bulk-badge.done{background:var(--ok); box-shadow:0 0 6px var(--ok);}
+  .bulk-badge.error{background:var(--danger); box-shadow:0 0 6px var(--danger);}
+  .bulk-row-name{font-size:13px; font-weight:500; min-width:120px; flex-shrink:0;}
+  .bulk-row-status{font-family:'IBM Plex Mono'; font-size:11.5px; color:var(--muted);}
   footer{margin-top:34px; text-align:center; font-family:'IBM Plex Mono'; font-size:11px; color:var(--muted);}
 </style>
 </head>
@@ -142,6 +156,21 @@
           </select>
           <div class="btn-row">
             <button class="btn" id="testRegionBtn">Ulanishni tekshirish</button>
+          </div>
+
+          <div class="toggle-row">
+            <div class="toggle" id="bulkModeToggle"><div class="knob"></div></div>
+            <div class="toggle-label">Bir nechta kanalga birdaniga yuborish</div>
+          </div>
+
+          <div id="bulkPicker" style="display:none;">
+            <div class="btn-row" style="margin-top:10px;">
+              <button class="btn" id="bulkSelectAllBtn">Barchasini belgilash</button>
+              <button class="btn btn-ghost" id="bulkSelectNoneBtn">Bekor qilish</button>
+            </div>
+            <div id="bulkChannelList" class="bulk-channel-list">
+              <div class="hint">— yuklanmoqda —</div>
+            </div>
           </div>
         </div>
 
@@ -212,6 +241,11 @@
         <div class="btn-row">
           <button class="btn btn-primary" id="publishBtn">Yuklashni boshlash</button>
           <button class="btn btn-ghost" id="resetBtn">Tozalash</button>
+        </div>
+
+        <div id="bulkResultsPanel" style="display:none; margin-top:20px;">
+          <label>Natijalar (kanal bo'yicha)</label>
+          <div id="bulkResultsList" class="bulk-results-list"></div>
         </div>
 
         <div class="notice"><b>Eslatma:</b> "Video fayl" orqali device'dan yuklasangiz, havola Vercel Blob (shu loyihaning o'z fayl xostingi) orqali avtomatik olinadi. Agar u ishlamasa, tayyor .mp4 havolangiz bo'lsa, uni to'g'ridan-to'g'ri "Video URL" maydoniga qo'lda kiritsangiz ham bo'ladi.</div>
@@ -305,8 +339,10 @@ async function loadAccounts(){
     const res = await fetch('/api/accounts');
     const data = await res.json();
     regionSelect.innerHTML = '';
+    const bulkList = el('bulkChannelList');
     if(!data.accounts || data.accounts.length === 0){
       regionSelect.innerHTML = '<option value="">Hali akkaunt sozlanmagan</option>';
+      bulkList.innerHTML = '<div class="hint">Hali akkaunt sozlanmagan</div>';
       return;
     }
     data.accounts.forEach(a => {
@@ -315,11 +351,37 @@ async function loadAccounts(){
       opt.textContent = a.name;
       regionSelect.appendChild(opt);
     });
+    bulkList.innerHTML = '';
+    data.accounts.forEach(a => {
+      const item = document.createElement('div');
+      item.className = 'bulk-channel-item';
+      const cbId = 'bulk_' + a.key;
+      item.innerHTML = `<input type="checkbox" class="bulk-channel-cb" id="${cbId}" value="${a.key}" data-name="${a.name}"><label for="${cbId}">${a.name}</label>`;
+      bulkList.appendChild(item);
+    });
   }catch(e){
     regionSelect.innerHTML = '<option value="">Ro\'yxatni yuklab bo\'lmadi</option>';
+    el('bulkChannelList').innerHTML = '<div class="hint">Ro\'yxatni yuklab bo\'lmadi</div>';
   }
 }
 loadAccounts();
+
+let bulkMode = false;
+const bulkModeToggle = el('bulkModeToggle');
+const bulkPicker = el('bulkPicker');
+bulkModeToggle.addEventListener('click', () => {
+  bulkMode = !bulkMode;
+  bulkModeToggle.classList.toggle('active', bulkMode);
+  bulkPicker.style.display = bulkMode ? 'block' : 'none';
+  regionSelect.disabled = bulkMode;
+  el('testRegionBtn').disabled = bulkMode;
+});
+el('bulkSelectAllBtn').addEventListener('click', () => {
+  document.querySelectorAll('.bulk-channel-cb').forEach(cb => cb.checked = true);
+});
+el('bulkSelectNoneBtn').addEventListener('click', () => {
+  document.querySelectorAll('.bulk-channel-cb').forEach(cb => cb.checked = false);
+});
 
 let shareToFeed = true;
 el('shareToFeedToggle').addEventListener('click', () => {
@@ -403,14 +465,14 @@ function resetSteps(){
 // xatosi chiqmaydi. Qo'lda rejimda token/domain brauzerdan boradi; viloyat
 // rejimida esa faqat accountKey yuboriladi — token va ID serverda, yashirin
 // konfiguratsiyadan olinadi va brauzerga hech qachon qaytarilmaydi.
-async function callApi(path, params, method='GET'){
+async function callApi(path, params, method='GET', accountKeyOverride){
   log(`${method} ${path.split('?')[0]} ${JSON.stringify(Object.fromEntries(Object.entries(params).filter(([k])=>k!=='access_token')))}`, 'req');
   const payload = { path, method, params };
   if(manualMode){
     payload.apiVersion = apiVersionSelect.value;
     payload.domain = domainFor(loginTypeSelect.value);
   } else {
-    payload.accountKey = regionSelect.value;
+    payload.accountKey = accountKeyOverride || regionSelect.value;
   }
   const res = await fetch('/api/proxy', {
     method: 'POST',
@@ -466,6 +528,45 @@ el('testRegionBtn').addEventListener('click', async () => {
 
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
+// Konteyner yaratish → holatni kuzatish → chop etish — 3 bosqichli asosiy
+// oqim. `onEvent` orqali chaqiruvchi (bitta kanal yoki bulk qatordagi
+// kanal) o'z UI'sini yangilaydi.
+async function runPublishFlow(accountKeyOverride, videoUrl, caption, mediaType, thumbOffset, token, onEvent){
+  const igSeg = igId();
+
+  onEvent('container_start');
+  const containerParams = { video_url: videoUrl, caption, media_type: mediaType };
+  if(manualMode) containerParams.access_token = token;
+  if(mediaType === 'REELS') containerParams.share_to_feed = shareToFeed ? 'true' : 'false';
+  if(thumbOffset) containerParams.thumb_offset = thumbOffset;
+  const createRes = await callApi(`/${igSeg}/media`, containerParams, 'POST', accountKeyOverride);
+  const creationId = createRes.id;
+  onEvent('container_done', { creationId });
+
+  onEvent('status_start');
+  let statusCode = 'IN_PROGRESS';
+  let attempts = 0;
+  while(statusCode === 'IN_PROGRESS' && attempts < 30){
+    await sleep(4000);
+    attempts++;
+    const statusParams = {fields:'status_code,status'};
+    if(manualMode) statusParams.access_token = token;
+    const statusRes = await callApi(`/${creationId}`, statusParams, 'GET', accountKeyOverride);
+    statusCode = statusRes.status_code;
+    onEvent('status_progress', { statusCode, attempts });
+    if(statusCode === 'ERROR') throw new Error('Video qayta ishlashda xatolik (ERROR status)');
+  }
+  if(statusCode !== 'FINISHED') throw new Error('Video vaqt ichida tayyor bo\'lmadi (timeout)');
+  onEvent('status_done');
+
+  onEvent('publish_start');
+  const publishParams = { creation_id: creationId };
+  if(manualMode) publishParams.access_token = token;
+  const publishRes = await callApi(`/${igSeg}/media_publish`, publishParams, 'POST', accountKeyOverride);
+  onEvent('publish_done', { mediaId: publishRes.id });
+  return publishRes.id;
+}
+
 el('publishBtn').addEventListener('click', async () => {
   const token = tokenInput.value.trim();
   const igUserId = igId();
@@ -474,12 +575,20 @@ el('publishBtn').addEventListener('click', async () => {
   const mediaType = mediaTypeSelect.value;
   const thumbOffset = thumbOffsetInput.value.trim();
 
+  const bulkTargets = (!manualMode && bulkMode)
+    ? Array.from(document.querySelectorAll('.bulk-channel-cb:checked')).map(cb => ({ key: cb.value, name: cb.dataset.name }))
+    : null;
+
   if(manualMode && (!token || !igUserId)){
     log('IG User ID va Access Token to\'ldirilishi shart', 'err');
     return;
   }
-  if(!manualMode && !regionSelect.value){
+  if(!manualMode && !bulkMode && !regionSelect.value){
     log('Viloyat tanlanmagan', 'err');
+    return;
+  }
+  if(!manualMode && bulkMode && (!bulkTargets || bulkTargets.length === 0)){
+    log('Kamida bitta kanal belgilanishi shart', 'err');
     return;
   }
   if(!videoUrl){
@@ -487,57 +596,68 @@ el('publishBtn').addEventListener('click', async () => {
     return;
   }
 
-  resetSteps();
   el('publishBtn').disabled = true;
 
-  try{
-    // Step 1: create container
-    setStep(1, 'active', 'konteyner yaratilmoqda...');
-    const containerParams = {
-      video_url: videoUrl,
-      caption: caption,
-      media_type: mediaType
-    };
-    if(manualMode) containerParams.access_token = token;
-    if(mediaType === 'REELS'){
-      containerParams.share_to_feed = shareToFeed ? 'true' : 'false';
-    }
-    if(thumbOffset){
-      containerParams.thumb_offset = thumbOffset;
-    }
-    const createRes = await callApi(`/${igUserId}/media`, containerParams, 'POST');
-    const creationId = createRes.id;
-    setStep(1, 'done', `konteyner ID: ${creationId}`);
+  if(bulkTargets){
+    // BULK REJIM: bir nechta kanalga parallel yuborish
+    resetSteps();
+    const resultsPanel = el('bulkResultsPanel');
+    const resultsList = el('bulkResultsList');
+    resultsPanel.style.display = 'block';
+    resultsList.innerHTML = '';
 
-    // Step 2: poll status
-    setStep(2, 'active', 'holat tekshirilmoqda...');
-    let statusCode = 'IN_PROGRESS';
-    let attempts = 0;
-    while(statusCode === 'IN_PROGRESS' && attempts < 30){
-      await sleep(4000);
-      attempts++;
-      const statusParams = {fields:'status_code,status'};
-      if(manualMode) statusParams.access_token = token;
-      const statusRes = await callApi(`/${creationId}`, statusParams);
-      statusCode = statusRes.status_code;
-      setStep(2, 'active', `holat: ${statusCode} (${attempts}/30)`);
-      if(statusCode === 'ERROR'){
-        throw new Error('Video qayta ishlashda xatolik (ERROR status)');
+    const rows = {};
+    bulkTargets.forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'bulk-row';
+      row.innerHTML = `<div class="bulk-badge" id="badge_${t.key}"></div><div class="bulk-row-name">${t.name}</div><div class="bulk-row-status" id="status_${t.key}">navbatda...</div>`;
+      resultsList.appendChild(row);
+      rows[t.key] = { badge: row.querySelector(`#badge_${t.key}`), status: row.querySelector(`#status_${t.key}`) };
+    });
+
+    log(`Bulk yuborish boshlandi: ${bulkTargets.length} ta kanal`, 'info');
+
+    const tasks = bulkTargets.map(async (t) => {
+      const rowEl = rows[t.key];
+      const setRow = (cls, msg) => { rowEl.badge.className = 'bulk-badge ' + cls; rowEl.status.textContent = msg; };
+      try{
+        await runPublishFlow(t.key, videoUrl, caption, mediaType, thumbOffset, null, (event, data) => {
+          if(event === 'container_start') setRow('active', 'konteyner yaratilmoqda...');
+          if(event === 'container_done') setRow('active', `konteyner: ${data.creationId}`);
+          if(event === 'status_start') setRow('active', 'video tekshirilmoqda...');
+          if(event === 'status_progress') setRow('active', `holat: ${data.statusCode} (${data.attempts}/30)`);
+          if(event === 'status_done') setRow('active', 'video tayyor');
+          if(event === 'publish_start') setRow('active', 'chop etilmoqda...');
+          if(event === 'publish_done') setRow('done', `chop etildi · ID: ${data.mediaId}`);
+        });
+        log(`✔ ${t.name}: muvaffaqiyatli chop etildi`, 'res');
+      }catch(e){
+        setRow('error', e.message);
+        log(`✘ ${t.name}: ${e.message}`, 'err');
       }
-    }
-    if(statusCode !== 'FINISHED'){
-      throw new Error('Video vaqt ichida tayyor bo\'lmadi (timeout)');
-    }
-    setStep(2, 'done', 'video tayyor');
+    });
 
-    // Step 3: publish
-    setStep(3, 'active', 'chop etilmoqda...');
-    const publishParams = { creation_id: creationId };
-    if(manualMode) publishParams.access_token = token;
-    const publishRes = await callApi(`/${igUserId}/media_publish`, publishParams, 'POST');
-    setStep(3, 'done', `chop etildi · media ID: ${publishRes.id}`);
+    await Promise.allSettled(tasks);
+    const doneCount = Object.values(rows).filter(r => r.badge.classList.contains('done')).length;
+    log(`Bulk yakunlandi: ${doneCount}/${bulkTargets.length} muvaffaqiyatli`, 'info');
+    el('publishBtn').disabled = false;
+    return;
+  }
+
+  // YAKKA REJIM: bitta hisob (avvalgidek)
+  resetSteps();
+  el('bulkResultsPanel').style.display = 'none';
+  try{
+    await runPublishFlow(undefined, videoUrl, caption, mediaType, thumbOffset, token, (event, data) => {
+      if(event === 'container_start') setStep(1, 'active', 'konteyner yaratilmoqda...');
+      if(event === 'container_done') setStep(1, 'done', `konteyner ID: ${data.creationId}`);
+      if(event === 'status_start') setStep(2, 'active', 'holat tekshirilmoqda...');
+      if(event === 'status_progress') setStep(2, 'active', `holat: ${data.statusCode} (${data.attempts}/30)`);
+      if(event === 'status_done') setStep(2, 'done', 'video tayyor');
+      if(event === 'publish_start') setStep(3, 'active', 'chop etilmoqda...');
+      if(event === 'publish_done') setStep(3, 'done', `chop etildi · media ID: ${data.mediaId}`);
+    });
     log('Muvaffaqiyatli chop etildi ✔', 'res');
-
   }catch(e){
     const active = document.querySelector('.step.active');
     if(active) active.classList.replace('active','error');
@@ -552,6 +672,7 @@ el('resetBtn').addEventListener('click', () => {
   captionInput.value = '';
   thumbOffsetInput.value = '';
   resetSteps();
+  el('bulkResultsPanel').style.display = 'none';
   log('Forma tozalandi', 'info');
 });
 </script>
