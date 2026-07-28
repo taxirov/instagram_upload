@@ -2,5 +2,8 @@
   "name": "ig-publisher",
   "version": "1.0.0",
   "private": true,
-  "description": "Instagram Graph API orqali reels/video chop etish uchun bitta sahifali konsol + CORS'siz Vercel proxy"
+  "description": "Instagram Graph API orqali reels/video chop etish uchun bitta sahifali konsol + CORS'siz Vercel proxy",
+  "dependencies": {
+    "@vercel/blob": "^2.6.1"
+  }
 }
